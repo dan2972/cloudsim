@@ -5,55 +5,84 @@ struct Camera {
     float3 up;
 };
 
-RWTexture2D output;
+RWTexture2D<float4> output;
+Texture3D<float> volume;
+SamplerState volumeSampler;
+
 uniform Camera camera;
 uniform float2 resolution;
-uniform float2 mouse_pos;
 
 float4 get_background_color(float3 rayDir) {
     float3 unitDirection = normalize(rayDir);
     float t = 0.5f * (unitDirection.y + 1.0f);
-    return (1.0f - t) * float4(1.0) + t * float4(0.5, 0.7, 1.0, 1.0);
+    return (1.0f - t) * float4(75/255.0, 100/255.0, 166/255.0, 1.0) + t * float4(0.0, 47.0/255.0, 113.0/255.0, 1.0);
+}
+
+// Helper: Ray-AABB intersection to find entry/exit points
+bool rayAABB(float3 ro, float3 rd, float3 boxMin, float3 boxMax, out float tMin, out float tMax) {
+    float3 invDir = 1.0 / rd;
+    float3 t0 = (boxMin - ro) * invDir;
+    float3 t1 = (boxMax - ro) * invDir;
+    float3 tmin = min(t0, t1);
+    float3 tmax = max(t0, t1);
+    tMin = max(max(tmin.x, tmin.y), tmin.z);
+    tMax = min(min(tmax.x, tmax.y), tmax.z);
+    return tMax > max(tMin, 0.0);
 }
 
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void render(uint3 tid : SV_DispatchThreadID)
 {
-    uint2 pixel = tid.xy;
-    if (pixel.x >= uint(resolution.x) || pixel.y >= uint(resolution.y)) return;
+    if (tid.x >= uint(resolution.x) || tid.y >= uint(resolution.y)) return;
 
-    // 1. Normalize pixel coordinates to [-1, 1] range
-    float2 uv = (float2(pixel) / resolution) * 2.0f - 1.0f;
-    uv.y *= -1.0; // Flip Y for screen space
+    float2 uv = (float2(tid.xy) / resolution) * 2.0f - 1.0f;
     float aspect = resolution.x / resolution.y;
-    uv.x *= aspect;
-
-    // 2. Setup Ray (simple pinhole camera)
+    float3 rayDir = normalize(camera.forward + uv.x * camera.right * aspect - uv.y * camera.up);
     float3 rayOrigin = camera.position;
-    float3 rayDir = normalize(camera.forward + uv.x * camera.right + uv.y * camera.up);
 
-    // 3. Ray-Sphere Intersection (Sphere at 0,0,0 with radius 1.0)
-    float3 sphereCenter = float3(0, 0, 0);
-    float radius = 1.0;
+    uint3 texSize;
+    volume.GetDimensions(texSize.x, texSize.y, texSize.z);
+    float3 boxMin = float3(0.0, 0.0, 0.0);
+    float3 boxMax = float3(texSize) / float3(50);
     
-    float3 oc = rayOrigin - sphereCenter;
-    float b = dot(oc, rayDir);
-    float c = dot(oc, oc) - radius * radius;
-    float discriminant = b * b - c;
+    float tNear, tFar;
+    float4 bgColor = get_background_color(rayDir);
+    float4 finalColor = bgColor;
 
-    float4 color = get_background_color(rayDir);
+    if (rayAABB(rayOrigin, rayDir, boxMin, boxMax, tNear, tFar)) {
+        float tStart = max(tNear, 0.0);
+        float tEnd = tFar;
+        
+        float totalDist = tEnd - tStart;
+        
+        const int numSamples = 128; 
+        float stepSize = totalDist / float(numSamples);
+        
+        float t = tStart;
+        float transmittance = 1.0;
+        float3 scatteredLight = 0.0;
+        float absorption = 10.0;
 
-    if (discriminant > 0) {
-        // We hit the sphere! Simple shading based on distance
-        float t = -b - sqrt(discriminant);
-        if (t > 0) {
-            float3 hitPos = rayOrigin + rayDir * t;
-            float3 normal = normalize(hitPos - sphereCenter);
-            float light = max(dot(normal, normalize(float3(1, 1, 1))), 0.2);
-            color = float4(light, 0.3, 0.2, 1.0); // Reddish sphere
+        for (int i = 0; i < numSamples; i++) {
+            if (transmittance < 0.01) break;
+
+            float3 pos = rayOrigin + rayDir * (t + stepSize * 0.5);
+            float3 texCoord = (pos - boxMin) / (boxMax - boxMin);
+            
+            float density = volume.SampleLevel(volumeSampler, texCoord, 0).r;
+
+            if (density > 0.001) {
+                float lightSample = density * stepSize * absorption;
+                transmittance *= exp(-lightSample);
+                scatteredLight += transmittance * lightSample * float3(1.0); 
+            }
+
+            t += stepSize;
         }
+        
+        finalColor.rgb = scatteredLight + (transmittance * bgColor.rgb);
     }
-    
-    output[pixel] = color;
+
+    output[tid.xy] = finalColor;
 }

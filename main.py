@@ -34,6 +34,8 @@ class Engine:
 
         self.capture_mouse = False
 
+        self.volume_texture = self.load_volume_data('cloud_4.npy', self.device)
+
     def run(self):
         frame = 0
         time = 0.0
@@ -75,7 +77,8 @@ class Engine:
                 vars={
                     'camera': self.camera.get_data(),
                     'resolution': np.array([float(self.WIDTH), float(self.HEIGHT)], dtype=np.float32),
-                    'output': self.output_texture
+                    'output': self.output_texture,
+                    'volume': self.volume_texture,
                 },
                 command_encoder=command_encoder
             )
@@ -136,6 +139,21 @@ class Engine:
                 self.window.cursor_mode = spy.CursorMode.disabled
             else:
                 self.window.cursor_mode = spy.CursorMode.normal
+    
+    def load_volume_data(self, path, device):
+        density_data = np.load(path)
+        d, h, w = density_data.shape
+        volume_texture = device.create_texture(
+            type=spy.TextureType.texture_3d,
+            format=spy.Format.r16_float,
+            width=w,
+            height=h,
+            depth=d,
+            usage=spy.TextureUsage.shader_resource,
+            label="volume_texture",
+            data=density_data.astype(np.float16)
+        )
+        return volume_texture
 
 if __name__ == "__main__":
     engine = Engine()

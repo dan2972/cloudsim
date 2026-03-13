@@ -8,3 +8,9 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Custom ignore patterns
+*.vdb
+*.npy
+.vscode/
+**/.DS_Store/
