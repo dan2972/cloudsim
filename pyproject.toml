@@ -6,6 +6,5 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "numpy>=2.4.3",
-    "pygame>=2.6.1",
     "slangpy>=0.40.1",
 ]

@@ -1,5 +1,3 @@
-// tracer.slang
-
 struct Camera {
     float3 position;
     float3 forward;
@@ -7,12 +5,23 @@ struct Camera {
     float3 up;
 };
 
-float4 render(
-    uint2 tid: SV_DispatchThreadID,
-    uniform Camera camera,
-    uniform float2 resolution)
+RWTexture2D output;
+uniform Camera camera;
+uniform float2 resolution;
+uniform float2 mouse_pos;
+
+float4 get_background_color(float3 rayDir) {
+    float3 unitDirection = normalize(rayDir);
+    float t = 0.5f * (unitDirection.y + 1.0f);
+    return (1.0f - t) * float4(1.0) + t * float4(0.5, 0.7, 1.0, 1.0);
+}
+
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void render(uint3 tid : SV_DispatchThreadID)
 {
-    uint2 pixel = tid;
+    uint2 pixel = tid.xy;
+    if (pixel.x >= uint(resolution.x) || pixel.y >= uint(resolution.y)) return;
 
     // 1. Normalize pixel coordinates to [-1, 1] range
     float2 uv = (float2(pixel) / resolution) * 2.0f - 1.0f;
@@ -33,12 +42,7 @@ float4 render(
     float c = dot(oc, oc) - radius * radius;
     float discriminant = b * b - c;
 
-    float4 color = float4(0.1, 0.1, 0.1, 1.0); // Dark background
-
-    // simple gradient background
-    float3 unitDirection = normalize(rayDir);
-    float t = 0.5f * (unitDirection.y + 1.0f);
-    color = (1.0f - t) * float4(1.0) + t * float4(0.5, 0.7, 1.0, 1.0);
+    float4 color = get_background_color(rayDir);
 
     if (discriminant > 0) {
         // We hit the sphere! Simple shading based on distance
@@ -50,6 +54,6 @@ float4 render(
             color = float4(light, 0.3, 0.2, 1.0); // Reddish sphere
         }
     }
-
-    return color;
+    
+    output[pixel] = color;
 }
