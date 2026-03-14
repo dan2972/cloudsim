@@ -35,6 +35,15 @@ class Engine:
         self.capture_mouse = False
 
         self.volume_texture = self.load_volume_data('cloud_4.npy', self.device)
+        self.volume_sampler = self.device.create_sampler(
+            min_filter=spy.TextureFilteringMode.linear,
+            mag_filter=spy.TextureFilteringMode.linear,
+            mip_filter=spy.TextureFilteringMode.linear,
+            address_u=spy.TextureAddressingMode.clamp_to_border,
+            address_v=spy.TextureAddressingMode.clamp_to_border,
+            address_w=spy.TextureAddressingMode.clamp_to_border,
+            border_color=np.array([0,0,0,0], dtype=np.float32)
+        )
 
     def run(self):
         frame = 0
@@ -79,6 +88,7 @@ class Engine:
                     'resolution': np.array([float(self.WIDTH), float(self.HEIGHT)], dtype=np.float32),
                     'output': self.output_texture,
                     'volume': self.volume_texture,
+                    'volumeSampler': self.volume_sampler,
                 },
                 command_encoder=command_encoder
             )

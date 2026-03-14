@@ -1,3 +1,5 @@
+import RNG;
+
 struct Camera {
     float3 position;
     float3 forward;
@@ -44,7 +46,7 @@ void render(uint3 tid : SV_DispatchThreadID)
     uint3 texSize;
     volume.GetDimensions(texSize.x, texSize.y, texSize.z);
     float3 boxMin = float3(0.0, 0.0, 0.0);
-    float3 boxMax = float3(texSize) / float3(50);
+    float3 boxMax = float3(texSize) / float3(10);
     
     float tNear, tFar;
     float4 bgColor = get_background_color(rayDir);
@@ -56,10 +58,13 @@ void render(uint3 tid : SV_DispatchThreadID)
         
         float totalDist = tEnd - tStart;
         
-        const int numSamples = 128; 
+        const int numSamples = 256; 
         float stepSize = totalDist / float(numSamples);
+
+        RNG rng = RNG(tid.xy, (tid.y * uint(resolution.x) + tid.x) * 10000);
+        float jitter = rng.next_1d();
         
-        float t = tStart;
+        float t = tStart + jitter * stepSize;
         float transmittance = 1.0;
         float3 scatteredLight = 0.0;
         float absorption = 10.0;
@@ -80,7 +85,7 @@ void render(uint3 tid : SV_DispatchThreadID)
 
             t += stepSize;
         }
-        
+
         finalColor.rgb = scatteredLight + (transmittance * bgColor.rgb);
     }
 
