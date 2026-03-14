@@ -1,3 +1,5 @@
+import math
+
 from camera import Camera
 import numpy as np
 import slangpy as spy
@@ -89,6 +91,7 @@ class Engine:
                     'output': self.output_texture,
                     'volume': self.volume_texture,
                     'volumeSampler': self.volume_sampler,
+                    'sunDirection': get_sun_direction(self.slider1.value)
                 },
                 command_encoder=command_encoder
             )
@@ -105,9 +108,11 @@ class Engine:
 
     def setup_ui(self):
         screen = self.ui_context.screen
-        window = spy.ui.Window(screen, "Settings", size=spy.float2(200, 100))
+        window = spy.ui.Window(screen, "Settings", size=spy.float2(400, 100))
 
         self.fps_text = spy.ui.Text(window, 'FPS: 0')
+
+        self.slider1 = spy.ui.SliderFloat(window, 'time', value=0.5, min=0, max=1)
 
     def on_keyboard_event(self, event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
@@ -120,6 +125,9 @@ class Engine:
 
     def handle_key_input(self, dt):
         speed = 5 * dt
+
+        if spy.KeyCode.left_control in self.pressed_keys:
+            speed *= 5
 
         if spy.KeyCode.w in self.pressed_keys:
             self.camera.move('forward', speed)
@@ -164,6 +172,14 @@ class Engine:
             data=density_data.astype(np.float16)
         )
         return volume_texture
+
+def get_sun_direction(time):
+    # 0 = Sunrise (East), PI/2 = Noon (Top), PI = Sunset (West)
+    angle = time * math.pi
+    x = math.cos(angle)
+    y = math.sin(angle)
+    z = 0.0
+    return spy.float3(x, y, z)
 
 if __name__ == "__main__":
     engine = Engine()

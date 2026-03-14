@@ -1,7 +1,7 @@
 import numpy as np
 
 class Camera:
-    def __init__(self, position, rotation=np.array([np.pi/2, 0.0]), sensitivity=0.002):
+    def __init__(self, position, rotation=np.array([0.0, 0.0]), sensitivity=0.002):
         self.position = position
         self.rotation = rotation
         self.sensitivity = sensitivity
