@@ -16,6 +16,7 @@ uniform float2 resolution;
 uniform float3 sunDirection;
 uniform float phaseParam;
 uniform float densityScale;
+uniform float ambientIntensity;
 
 static const float PI = 3.14159265359;
 
@@ -167,10 +168,10 @@ void render(uint3 tid : SV_DispatchThreadID)
 
             if (density > 0.001) {
                 transmittance *= exp(-density * stepSize);
-                float3 sunLight = sampleInScatterSun(lightDir, pos, boxMin, boxMax, 64) * sunColor * 200;
+                float3 sunLight = sampleInScatterSun(lightDir, pos, boxMin, boxMax, 64) * sunColor * 50;
                 float3 sunScatter = sunLight * phaseHG(dot(rayDir, lightDir), phaseParam);
                 // float3 ambientLight = ambientInScatter(pos, density, boxMin, boxMax, sunColor, float3(1)) * (1 / (4 * PI));
-                float3 ambientLight = sunColor;
+                float3 ambientLight = sunColor * ambientIntensity;
                 L += transmittance * density * stepSize * (sunScatter + ambientLight);
             }
 

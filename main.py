@@ -93,7 +93,8 @@ class Engine:
                     'volumeSampler': self.volume_sampler,
                     'sunDirection': get_sun_direction(self.slider1.value),
                     'phaseParam': self.slider2.value,
-                    'densityScale': self.slider3.value
+                    'densityScale': self.slider3.value,
+                    'ambientIntensity': self.slider4.value
                 },
                 command_encoder=command_encoder
             )
@@ -115,8 +116,9 @@ class Engine:
         self.fps_text = spy.ui.Text(window, 'FPS: 0')
 
         self.slider1 = spy.ui.SliderFloat(window, 'time', value=0.5, min=0, max=1)
-        self.slider2 = spy.ui.SliderFloat(window, 'phase', value=0.8, min=-1, max=1)
+        self.slider2 = spy.ui.SliderFloat(window, 'phase', value=0.2, min=-1, max=1)
         self.slider3 = spy.ui.SliderFloat(window, 'density', value=1.0, min=0.1, max=1.0)
+        self.slider4 = spy.ui.SliderFloat(window, 'ambient', value=0.5, min=0.0, max=1.0)
 
     def on_keyboard_event(self, event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
