@@ -1,4 +1,5 @@
 import RNG;
+import helpers;
 
 struct Camera {
     float3 position;
@@ -17,8 +18,106 @@ uniform float3 sunDirection;
 uniform float phaseParam;
 uniform float densityScale;
 uniform float ambientIntensity;
+uniform float scatterStrength;
 
-static const float PI = 3.14159265359;
+static const float planetRadius = 100000.0;
+static const float atmosphereRadius = 101000.0;
+static const int numAtmosphereSamples = 16;
+static const float atmosphereDensityFalloff = 15.0;
+static const float3 wavelengths = float3(700, 530, 440); // RGB wavelengths in nm
+static const float3 planetCenter = float3(0, -planetRadius, 0);
+
+static const float4 planetColor = float4(0.5, 0.2, 0.2, 1.0);
+
+bool raySphere(float3 ro, float3 rd, float3 sphereCenter, float radius, out float tMin, out float tMax) {
+    float3 oc = ro - sphereCenter;
+    float a = dot(rd, rd);
+    float b = 2.0 * dot(oc, rd);
+    float c = dot(oc, oc) - radius * radius;
+    float discriminant = b * b - 4.0 * a * c;
+
+    if (discriminant < 0.0) {
+        tMin = 0.0;
+        tMax = 0.0;
+        return false;
+    }
+
+    float sqrtDisc = sqrt(discriminant);
+    tMin = (-b - sqrtDisc) / (2.0 * a);
+    tMax = (-b + sqrtDisc) / (2.0 * a);
+    if (tMax < 0.0) return false;
+    if (tMin < 0.0) tMin = 0.0;
+    return true;
+}
+
+float atmosphereDensity(float3 pos) {
+    float height = length(pos - planetCenter) - planetRadius;
+    float heightNorm = height / (atmosphereRadius - planetRadius);
+    return exp(-heightNorm * atmosphereDensityFalloff) * (1-heightNorm);
+}
+
+float opticalDepth(float3 start, float3 dir, float maxDist) {
+    float depth = 0.0;
+    const int numSamples = 16;
+    float stepSize = maxDist / float(numSamples);
+    float t = 0.0;
+
+    for (int i = 0; i < numSamples; i++) {
+        float3 pos = start + dir * t;
+        depth += atmosphereDensity(pos) * stepSize;
+        t += stepSize;
+    }
+    return depth;
+}
+
+float4 getAtmosphereColor(float3 rayOrigin, float3 rayDir) {
+    float3 pos = rayOrigin;
+    
+    float tMin, tMax;
+    bool hitSurface = raySphere(pos, rayDir, planetCenter, planetRadius, tMin, tMax);
+    float distToSurface = tMin;
+
+    if (!raySphere(pos, rayDir, planetCenter, atmosphereRadius, tMin, tMax))
+        return float4(0); // Ray misses atmosphere
+    
+    float distToAtmosphere = tMin;
+    float distThroughAtmosphere = tMax - distToAtmosphere;
+    if (hitSurface)
+        distThroughAtmosphere = distToSurface - distToAtmosphere;
+
+    float3 inScatteredLight = 0.0;
+    float viewRayOpticalDepth = 0.0;
+
+    float3 scatteringCoeffs = pow(100 / wavelengths, 4) * scatterStrength;
+
+    float t = distToAtmosphere;
+    for (int i = 0; i < numAtmosphereSamples; i++) {
+
+        pos = rayOrigin + rayDir * t;
+        float stepSize = distThroughAtmosphere / float(numAtmosphereSamples);
+
+        float _, sunRayLength;
+        raySphere(pos, sunDirection, planetCenter, atmosphereRadius, _, sunRayLength);
+        float sunRayOpticalDepth = opticalDepth(pos, sunDirection, sunRayLength);
+        viewRayOpticalDepth += atmosphereDensity(pos) * stepSize;
+        float3 transmittance = exp(-(sunRayOpticalDepth + viewRayOpticalDepth) * scatteringCoeffs);
+        float density = atmosphereDensity(pos);
+
+        inScatteredLight += transmittance * density * scatteringCoeffs * stepSize;
+        t += stepSize;
+    }
+
+    float4 color = float4(inScatteredLight, 1.0);
+    // Sun Disk
+    float3 unitDir = normalize(rayDir);
+    float3 sunDir = normalize(sunDirection);
+    float sunDot = dot(unitDir, sunDir);
+    float3 sunColor = getSunColor();
+    float sunDisk = smoothstep(0.9995, 0.9999, sunDot);
+    float sunGlow = pow(max(0.0, sunDot), 500.0);
+    color.rgb += sunColor * (sunDisk + sunGlow * 0.4);
+    return color;
+}
 
 float3 getSunColor() {
     float3 sunDir = normalize(sunDirection);
@@ -61,17 +160,6 @@ float4 getBgColor(float3 rayOrigin, float3 rayDir) {
     return float4(skyRGB, 1.0);
 }
 
-bool rayAABB(float3 ro, float3 rd, float3 boxMin, float3 boxMax, out float tMin, out float tMax) {
-    float3 invDir = 1.0 / rd;
-    float3 t0 = (boxMin - ro) * invDir;
-    float3 t1 = (boxMax - ro) * invDir;
-    float3 tmin = min(t0, t1);
-    float3 tmax = max(t0, t1);
-    tMin = max(max(tmin.x, tmin.y), tmin.z);
-    tMax = min(min(tmax.x, tmax.y), tmax.z);
-    return tMax > max(tMin, 0.0);
-}
-
 float3 sampleInScatterSun(float3 toSun, float3 rayOrigin, float3 boxMin, float3 boxMax, int numSamples) {
     float tNear, tFar;
     float transmittance = 1.0;
@@ -96,26 +184,6 @@ float3 sampleInScatterSun(float3 toSun, float3 rayOrigin, float3 boxMin, float3 
     return transmittance;
 }
 
-float phaseHG(float cosTheta, float g) {
-    float g2 = g * g;
-    return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * cosTheta, 1.5));
-}
-
-float Ei(float z)
-{
-    return 0.5772156649015328606065 + log(1e-4 + abs(z)) + z * (1.0 + z * (0.25 + z * ((1.0 / 18.0) + z * ((1.0 / 96.0) + z * (1.0 / 600.0)))));
-}
-
-float3 ambientInScatter(float3 pos, float density, float3 bbMin, float3 bbMax, float3 sunColor, float3 horizonColor) {
-    float Hp = bbMax.y - bbMin.y;
-    float a = -density * Hp;
-    float3 isoScatterTop = sunColor * max(0.0, exp(a) - a * Ei(a));
-    float Hb = pos.y - bbMin.y;
-    a = -density * Hb;
-    float3 isoScatterBottom = horizonColor * max(0.0, exp(a) - a * Ei(a));
-    return isoScatterTop + isoScatterBottom;
-}
-
 [shader("compute")]
 [numthreads(16, 16, 1)]
 void render(uint3 tid : SV_DispatchThreadID)
@@ -133,9 +201,9 @@ void render(uint3 tid : SV_DispatchThreadID)
     float3 boxOffset = float3(0, 10, 0);
     float3 boxMin = float3(0.0, 0.0, 0.0) + boxOffset;
     float3 boxMax = float3(texSize) / float3(8) + boxOffset;
-    
+
     float tNear, tFar;
-    float4 bgColor = getBgColor(rayOrigin, rayDir);
+    float4 bgColor = getAtmosphereColor(rayOrigin, rayDir);
     float4 finalColor = bgColor;
 
     float3 lightDir = normalize(sunDirection);
