@@ -29,7 +29,7 @@ class Engine:
         self.window.on_keyboard_event = self.on_keyboard_event
         self.window.on_mouse_event = self.on_mouse_event
 
-        self.camera = Camera(position=np.array([0.0, 0.0, -5.0], dtype=np.float32))
+        self.camera = Camera(position=np.array([0.0, 10.0, -5.0], dtype=np.float32))
 
         self.pressed_keys = set()
         self.mouse_pos = spy.float2()
@@ -91,7 +91,9 @@ class Engine:
                     'output': self.output_texture,
                     'volume': self.volume_texture,
                     'volumeSampler': self.volume_sampler,
-                    'sunDirection': get_sun_direction(self.slider1.value)
+                    'sunDirection': get_sun_direction(self.slider1.value),
+                    'phaseParam': self.slider2.value,
+                    'densityScale': self.slider3.value
                 },
                 command_encoder=command_encoder
             )
@@ -113,6 +115,8 @@ class Engine:
         self.fps_text = spy.ui.Text(window, 'FPS: 0')
 
         self.slider1 = spy.ui.SliderFloat(window, 'time', value=0.5, min=0, max=1)
+        self.slider2 = spy.ui.SliderFloat(window, 'phase', value=0.8, min=-1, max=1)
+        self.slider3 = spy.ui.SliderFloat(window, 'density', value=1.0, min=0.1, max=1.0)
 
     def on_keyboard_event(self, event: spy.KeyboardEvent):
         if event.type == spy.KeyboardEventType.key_press:
