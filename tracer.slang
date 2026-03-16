@@ -49,8 +49,8 @@ bool atmosphereTraceToSun(float3 pos, out float opticalDepthSunR, out float opti
     float stepSize = t1Light / float(numSunRaySamples);
 
     for (int j = 0; j < numSunRaySamples; j++) {
-        float3 pos = pos + sunDirection * stepSize * j;
-        float height = length(pos - planetCenter) - planetRadius;
+        float3 stepPos = pos + sunDirection * stepSize * j;
+        float height = length(stepPos - planetCenter) - planetRadius;
         if (height < 0) { return false;}
         opticalDepthSunM += atmosphereDensity(height, Hm) * stepSize;
         opticalDepthSunR += atmosphereDensity(height, Hr) * stepSize;
