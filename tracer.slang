@@ -34,7 +34,29 @@ static const float Hm = 1200;
 static const float3 scatterR = float3(3.8e-6, 1.5e-5, 3.2e-5); // betaR
 static const float3 scatterM = float3(21e-6f); // betaM
 
-static const float4 planetColor = float4(0.5, 0.2, 0.2, 1.0);
+// H assumed to be thickness of the atmosphere if its density were uniform
+// (acts as a scale factor for how quickly density falls off with height)
+float atmosphereDensity(float height, float H) {
+    return exp(-height / H);
+}
+
+// returns false if ray hits ground, true if it reaches sun
+bool atmosphereTraceToSun(float3 pos, out float opticalDepthSunR, out float opticalDepthSunM) {
+    float t0Light, t1Light;
+    raySphere(pos, sunDirection, planetCenter, atmosphereRadius, t0Light, t1Light); // always hits since we're inside atmosphere
+    opticalDepthSunR = 0.0;
+    opticalDepthSunM = 0.0;
+    float stepSize = t1Light / float(numSunRaySamples);
+
+    for (int j = 0; j < numSunRaySamples; j++) {
+        float3 pos = pos + sunDirection * stepSize * j;
+        float height = length(pos - planetCenter) - planetRadius;
+        if (height < 0) { return false;}
+        opticalDepthSunM += atmosphereDensity(height, Hm) * stepSize;
+        opticalDepthSunR += atmosphereDensity(height, Hr) * stepSize;
+    }
+    return true;
+}
 
 float4 getAtmosphereColor(float3 rayOrigin, float3 rayDir) {
     float3 pos = rayOrigin;
@@ -51,8 +73,8 @@ float4 getAtmosphereColor(float3 rayOrigin, float3 rayDir) {
     if (hitSurface)
         distThroughAtmosphere = distToSurface - distToAtmosphere;
 
-    float3 sumR = float3(0); // rayleigh contribution
-    float3 sumM = float3(0); // mie contribution
+    float3 LR = float3(0); // rayleigh contribution
+    float3 LM = float3(0); // mie contribution
     float opticalDepthR = 0.0;
     float opticalDepthM = 0.0;
 
@@ -69,82 +91,29 @@ float4 getAtmosphereColor(float3 rayOrigin, float3 rayDir) {
 
         float height = length(pos - planetCenter) - planetRadius;
 
-        float hr = exp(-height / Hr) * stepSize;
-        float hm = exp(-height / Hm) * stepSize;
-        opticalDepthR += hr;
-        opticalDepthM += hm;
+        float densityR = atmosphereDensity(height, Hr) * stepSize;
+        float densityM = atmosphereDensity(height, Hm) * stepSize;
+        opticalDepthR += densityR;
+        opticalDepthM += densityM;
 
-        float t0Light, t1Light;
-        raySphere(pos, sunDirection, planetCenter, atmosphereRadius, t0Light, t1Light); // always hits since we're inside atmosphere
-        float opticalDepthSunR = 0.0;
-        float opticalDepthSunM = 0.0;
-        float stepSizeLight = t1Light / float(numSunRaySamples);
-        // take samples along sun ray to get optical depth to sun
-        bool hitGround = false;
-        for (int j = 0; j < numSunRaySamples; j++) {
-            float3 sunPos = pos + sunDirection * stepSizeLight * j;
-            float heightSun = length(sunPos - planetCenter) - planetRadius;
-            if (heightSun < 0) {hitGround = true; break;}
-            opticalDepthSunM += exp(-heightSun / Hm) * stepSizeLight;
-            opticalDepthSunR += exp(-heightSun / Hr) * stepSizeLight;
-        }
+        float opticalDepthSunR, opticalDepthSunM;
+        bool hitGround = !atmosphereTraceToSun(pos, opticalDepthSunR, opticalDepthSunM);
 
         if (!hitGround) {
             float3 tau = scatterR * (opticalDepthR + opticalDepthSunR) + scatterM * (opticalDepthM + opticalDepthSunM);
-            float3 attenuation = exp(-tau);
-            sumR += attenuation * hr;
-            sumM += attenuation * hm;
+            float3 transmittance = exp(-tau);
+            LR += transmittance * densityR;
+            LM += transmittance * densityM;
         }
 
         t += stepSize;
     }
 
-    float3 color = (sumR * scatterR * phaseR  + sumM * scatterM * phaseM) * sunIntensity;
+    float3 color = (LR * scatterR * phaseR  + LM * scatterM * phaseM) * sunIntensity;
     return float4(color, 1.0);
 }
 
-float3 getSunColor() {
-    float3 sunDir = normalize(sunDirection);
-    float sunVisibility = smoothstep(-0.15, 0.5, sunDir.y);
-    float3 daylight = float3(1.0, 0.9, 0.75);
-    float3 sunset = float3(1.0, 0.35, 0.1);
-
-    float3 color = lerp(sunset, daylight, sunVisibility);
-    return color * sunVisibility;
-}
-
-float4 getBgColor(float3 rayOrigin, float3 rayDir) {
-    float3 unitDir = normalize(rayDir);
-    float3 sunDir = normalize(sunDirection);
-    float sunVis = smoothstep(0, 0.8, sunDir.y);
-
-    // Sky gradient colors
-    float3 zenith = lerp(float3(0.01, 0.02, 0.05), float3(0.1, 0.3, 0.6), sunVis);
-    float3 horizon = lerp(float3(0.2, 0.05, 0.02), float3(0.6, 0.7, 0.9), sunVis);
-
-    float3 skyRGB = lerp(zenith, horizon, pow(1.0 - max(unitDir.y, 0.0), 3.0));
-
-    // Sun Disk
-    float sunDot = dot(unitDir, sunDir);
-    float3 sunColor = getSunColor();
-    float sunDisk = smoothstep(0.9995, 0.9999, sunDot);
-    float sunGlow = pow(max(0.0, sunDot), 500.0);
-
-    skyRGB += sunColor * (sunDisk + sunGlow * 0.4);
-
-    if (rayDir.y < 0) {
-        float tFloor = -(rayOrigin.y) / rayDir.y;
-        if (tFloor > 0.0) {
-            float3 floorPos = rayOrigin + rayDir * tFloor;
-            int checker = (int(floor(floorPos.x)) + int(floor(floorPos.z))) % 2;
-            float3 floorColor = (checker == 0 ? float3(0.6) : float3(0.2)) * max(0.05, sunVis);
-            skyRGB = lerp(skyRGB, floorColor, exp(-tFloor * 0.02));
-        }
-    }
-    return float4(skyRGB, 1.0);
-}
-
-float3 sampleInScatterSun(float3 toSun, float3 rayOrigin, float3 boxMin, float3 boxMax, int numSamples) {
+float3 volumeTraceToSun(float3 toSun, float3 rayOrigin, float3 boxMin, float3 boxMax, int numSamples) {
     float tNear, tFar;
     float transmittance = 1.0;
 
@@ -220,7 +189,7 @@ void render(uint3 tid : SV_DispatchThreadID)
 
             if (density > 0.001) {
                 transmittance *= exp(-density * stepSize);
-                float3 sunLight = sampleInScatterSun(lightDir, pos, boxMin, boxMax, 64) * sunColor;
+                float3 sunLight = volumeTraceToSun(lightDir, pos, boxMin, boxMax, 64) * sunColor;
                 float3 sunScatter = sunLight * phaseHG(dot(rayDir, lightDir), 0.2);
                 // float3 ambientLight = ambientInScatter(pos, density, boxMin, boxMax, sunColor, float3(1)) * (1 / (4 * PI));
                 float3 ambientLight = sunColor * ambientIntensity;
