@@ -9,7 +9,7 @@ class Engine:
     HEIGHT = 720
 
     def __init__(self):
-        self.window = spy.Window(width=self.WIDTH, height=self.HEIGHT, title="SlangPy Raytracer")
+        self.window = spy.Window(width=self.WIDTH, height=self.HEIGHT, title="Engine")
         # self.device = spy.create_device(type=spy.DeviceType.vulkan)
         self.device = spy.create_device() # auto select backend
         print(self.device)

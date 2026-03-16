@@ -1,5 +1,7 @@
 # A simple real-time volumetric cloud renderer
 
+![](imgs/sunset2_c.png)
+
 ## Usage
 
 Ensure that `uv` is installed and run `uv sync` in the command line.
@@ -21,3 +23,8 @@ To run the renderer:
 ```bash
 python main.py
 ```
+
+## Example Renders
+![](imgs/day_top_c.png)
+![](imgs/day_side_c.png)
+![](imgs/sunset_c.png)
